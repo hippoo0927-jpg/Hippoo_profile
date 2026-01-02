@@ -10,7 +10,7 @@ const VisionClock: React.FC = () => {
   }, []);
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const formatDate = (date: Date) => {
@@ -18,9 +18,9 @@ const VisionClock: React.FC = () => {
   };
 
   return (
-    <div className="glass px-6 py-3 rounded-full flex flex-col items-center justify-center text-white select-none pointer-events-auto shadow-xl">
-      <span className="text-xl font-medium tracking-tight leading-none">{formatTime(time)}</span>
-      <span className="text-[10px] uppercase tracking-widest opacity-60 mt-0.5">{formatDate(time)}</span>
+    <div className="glass px-3 py-1.5 sm:px-6 sm:py-3 rounded-[1.25rem] sm:rounded-full flex flex-col items-center justify-center text-white select-none pointer-events-auto shadow-xl border border-white/20">
+      <span className="text-xs sm:text-xl font-bold tracking-tight leading-none">{formatTime(time)}</span>
+      <span className="text-[7px] sm:text-[10px] uppercase tracking-widest opacity-50 font-black mt-0.5">{formatDate(time)}</span>
     </div>
   );
 };

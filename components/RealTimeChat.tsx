@@ -1,7 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { getAIResponse } from '../services/geminiService';
-import { PROFILE_DATA } from '../constants';
 
 interface Message {
   id: string;
@@ -20,53 +19,21 @@ interface RealTimeChatProps {
 const chatChannel = new BroadcastChannel('oasis_global_chat');
 
 const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
-  // Load nickname from localStorage if available
-  const [nickname, setNickname] = useState<string>(localStorage.getItem('chat_nickname') || '');
+  // Load initial states from localStorage
+  const [nickname, setNickname] = useState<string>(() => localStorage.getItem('chat_nickname') || '');
   const [tempNickname, setTempNickname] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('chat_history');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [onlineCount, setOnlineCount] = useState(1);
+  const [onlineCount, setOnlineCount] = useState(Math.floor(Math.random() * 3) + 5);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Sync messages with localStorage whenever they change
   useEffect(() => {
-    // Listen for messages from other tabs
-    const handleMessage = (event: MessageEvent) => {
-      const msg = event.data as Message;
-      setMessages((prev) => [...prev, msg]);
-      
-      // Update online count visual feedback
-      if (msg.role === 'system' && msg.text.includes('entered')) {
-        setOnlineCount(prev => Math.min(prev + 1, 20));
-      }
-    };
-
-    chatChannel.onmessage = handleMessage;
-    
-    // Simulate some base traffic
-    setOnlineCount(Math.floor(Math.random() * 5) + 3);
-
-    return () => {
-      chatChannel.onmessage = null;
-    };
-  }, []);
-
-  // Broadcast entry only once when nickname is first established or chat opened
-  useEffect(() => {
-    if (nickname && messages.length === 0) {
-      const welcomeMsg: Message = {
-        id: 'welcome-' + Date.now(),
-        user: 'System',
-        text: `🌐 [GATEWAY] ${nickname} has connected to the Node.`,
-        role: 'system',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages([welcomeMsg]);
-      chatChannel.postMessage(welcomeMsg);
-    }
-  }, [nickname]);
-
-  useEffect(() => {
+    localStorage.setItem('chat_history', JSON.stringify(messages));
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
@@ -74,6 +41,41 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
       });
     }
   }, [messages]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const msg = event.data as Message;
+      // Only add if it's a new message
+      setMessages((prev) => {
+        if (prev.find(m => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+      
+      if (msg.role === 'system' && msg.text.includes('connected')) {
+        setOnlineCount(p => Math.min(p + 1, 30));
+      }
+    };
+
+    chatChannel.onmessage = handleMessage;
+    return () => {
+      chatChannel.onmessage = null;
+    };
+  }, []);
+
+  // Broadcast entry notification
+  useEffect(() => {
+    if (nickname && messages.length === 0) {
+      const welcomeMsg: Message = {
+        id: 'sys-' + Date.now(),
+        user: 'System',
+        text: `🌐 ${nickname} connected to the Oasis Network.`,
+        role: 'system',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages([welcomeMsg]);
+      chatChannel.postMessage(welcomeMsg);
+    }
+  }, [nickname]);
 
   const handleSetNickname = () => {
     if (tempNickname.trim().length >= 2) {
@@ -87,7 +89,7 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
     if (!input.trim() || isLoading) return;
 
     const userMsg: Message = {
-      id: 'msg-' + Date.now(),
+      id: 'msg-' + Date.now() + Math.random(),
       user: nickname,
       text: input,
       role: 'user',
@@ -95,15 +97,15 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
     };
 
     setMessages(prev => [...prev, userMsg]);
-    chatChannel.postMessage(userMsg); // This broadcasts to other tabs/participants
+    chatChannel.postMessage(userMsg); 
     setInput('');
 
-    // AI logic to act as a chat moderator/host
+    // AI Moderator Response
     if (input.toLowerCase().includes('hi') || input.toLowerCase().includes('hello') || Math.random() > 0.8) {
         setIsLoading(true);
-        const responseText = await getAIResponse(`(Room Context: You are a participant in a group chat named Hippoo_. The current user is ${nickname}. Respond briefly as if you are chatting in real-time.) ${input}`);
+        const responseText = await getAIResponse(`(Context: Real-time chat with ${nickname}) ${input}`);
         const aiMsg: Message = {
-            id: 'ai-' + Date.now(),
+            id: 'ai-' + Date.now() + Math.random(),
             user: 'Hippoo_ [Host]',
             text: responseText,
             role: 'model',
@@ -116,15 +118,24 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
     }
   };
 
+  const handleLogout = () => {
+    if (confirm('Do you want to reset your identity and history?')) {
+      localStorage.removeItem('chat_nickname');
+      localStorage.removeItem('chat_history');
+      setNickname('');
+      setMessages([]);
+    }
+  };
+
   if (!nickname) {
     return (
-      <div className="glass-dark w-[85vw] sm:w-96 rounded-[2.5rem] overflow-hidden p-10 flex flex-col items-center gap-8 shadow-2xl border border-white/20 backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-300">
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-2xl transform rotate-3 hover:rotate-0 transition-transform">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" /></svg>
+      <div className="glass-dark w-[85vw] sm:w-96 rounded-[2.5rem] overflow-hidden p-10 flex flex-col items-center gap-8 shadow-2xl border border-white/20 backdrop-blur-3xl animate-in fade-in zoom-in-95">
+        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-2xl rotate-3">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
         </div>
         <div className="text-center">
-          <h3 className="text-2xl font-black text-white tracking-tight">Oasis Connect</h3>
-          <p className="text-white/40 text-[10px] mt-2 uppercase tracking-[0.2em] font-bold">Spatial Communication Protocol</p>
+          <h3 className="text-2xl font-black text-white">Join Station</h3>
+          <p className="text-white/40 text-[10px] mt-2 uppercase tracking-widest font-bold">Encrypted Multi-Tab Session</p>
         </div>
         <div className="w-full space-y-4">
           <input
@@ -133,15 +144,15 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
             onChange={(e) => setTempNickname(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSetNickname()}
             placeholder="Identity Handle..."
-            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all text-center font-bold placeholder:text-white/20"
+            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white text-center font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             autoFocus
           />
           <button
             onClick={handleSetNickname}
             disabled={tempNickname.trim().length < 2}
-            className="w-full bg-white text-black font-black py-4 rounded-2xl hover:bg-blue-500 hover:text-white transition-all transform active:scale-95 disabled:opacity-30 shadow-xl"
+            className="w-full bg-white text-black font-black py-4 rounded-2xl hover:bg-blue-500 hover:text-white transition-all transform active:scale-95 disabled:opacity-20 shadow-xl"
           >
-            Enter Station
+            Connect to Oasis
           </button>
         </div>
       </div>
@@ -149,8 +160,7 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
   }
 
   return (
-    <div className="glass-dark w-[92vw] sm:w-[480px] rounded-[2.5rem] overflow-hidden flex flex-col shadow-[0_40px_100px_rgba(0,0,0,0.8)] border border-white/20 max-h-[80vh] backdrop-blur-3xl">
-      {/* Header */}
+    <div className="glass-dark w-[92vw] sm:w-[480px] rounded-[2.5rem] overflow-hidden flex flex-col shadow-[0_40px_100px_rgba(0,0,0,0.8)] border border-white/20 max-h-[75vh] backdrop-blur-3xl">
       <div className="px-6 py-5 border-b border-white/10 bg-white/5 flex justify-between items-center">
         <div className="flex items-center gap-4">
           <div className="relative">
@@ -160,30 +170,26 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
             <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-4 border-black animate-pulse"></div>
           </div>
           <div>
-            <h3 className="text-sm font-black text-white uppercase tracking-wider leading-none mb-1">Global Station 01</h3>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider leading-none mb-1">Live Node 01</h3>
             <div className="flex items-center gap-2">
-               <span className="text-[10px] text-green-400 font-bold uppercase tracking-widest">{onlineCount} Active Nodes</span>
+               <span className="text-[10px] text-green-400 font-bold uppercase tracking-widest">{onlineCount} Active</span>
                <span className="text-white/20 text-[10px]">•</span>
                <span className="text-white/40 text-[10px] font-bold">@{nickname}</span>
             </div>
           </div>
         </div>
         <button 
-          onClick={() => { if(confirm('Change your chat identity?')) { localStorage.removeItem('chat_nickname'); setNickname(''); } }}
+          onClick={handleLogout}
           className="p-2 rounded-xl hover:bg-white/10 text-white/20 hover:text-red-400 transition-all"
-          title="Logout / Change Nick"
+          title="Reset Session"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
         </button>
       </div>
       
-      {/* Messages Feed */}
-      <div 
-        ref={scrollRef} 
-        className="flex-1 min-h-[400px] overflow-y-auto p-6 space-y-6 scrollbar-hide bg-black/10"
-      >
+      <div ref={scrollRef} className="flex-1 min-h-[350px] overflow-y-auto p-6 space-y-6 scrollbar-hide bg-black/10">
         {messages.map((m) => (
-          <div key={m.id} className={`flex flex-col ${m.role === 'system' ? 'items-center my-6' : m.role === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-300`}>
+          <div key={m.id} className={`flex flex-col ${m.role === 'system' ? 'items-center my-4' : m.role === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-300`}>
             {m.role !== 'system' && (
               <div className={`flex items-center gap-2 mb-1.5 px-1 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <span className={`text-[9px] font-black uppercase tracking-widest ${m.color || 'text-white/30'}`}>{m.user}</span>
@@ -191,7 +197,7 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
               </div>
             )}
             <div className={`px-5 py-3.5 rounded-[1.25rem] text-[14px] leading-relaxed shadow-xl border ${
-              m.role === 'system' ? 'bg-white/5 text-white/30 border-none italic text-[10px] py-2' :
+              m.role === 'system' ? 'bg-white/5 text-white/30 border-none italic text-[10px] py-1' :
               m.role === 'user' ? 'bg-blue-600/40 text-white rounded-tr-none border-blue-400/20' :
               'glass text-white/90 rounded-tl-none border-white/10'
             }`}>
@@ -199,31 +205,22 @@ const RealTimeChat: React.FC<RealTimeChatProps> = ({ onClose }) => {
             </div>
           </div>
         ))}
-        {isLoading && (
-          <div className="flex flex-col items-start px-2">
-            <div className="flex gap-1.5 py-2">
-              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '200ms' }} />
-              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '400ms' }} />
-            </div>
-          </div>
-        )}
+        {isLoading && <div className="text-[10px] text-blue-400 font-bold animate-pulse px-2 uppercase">Hippoo is responding...</div>}
       </div>
 
-      {/* Input Section */}
       <div className="p-6 bg-white/5 border-t border-white/10 flex gap-3 backdrop-blur-3xl">
         <input 
           type="text" 
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Type your transmission..."
-          className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all font-medium"
+          placeholder="Message to the room..."
+          className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
         />
         <button 
           onClick={handleSend}
           disabled={!input.trim() || isLoading}
-          className="bg-white text-black hover:bg-blue-500 hover:text-white w-14 h-14 rounded-2xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-20 shadow-2xl group"
+          className="bg-white text-black hover:bg-blue-500 hover:text-white w-14 h-14 rounded-2xl flex items-center justify-center transition-all active:scale-90 shadow-2xl group"
         >
           <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
         </button>
