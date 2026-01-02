@@ -1,0 +1,7 @@
+{
+  "name": "VisionOS 3D Profile Dashboard",
+  "description": "A high-end personal profile website inspired by VisionOS, featuring a Spline 3D icon scene, real-time clock, and an AI-powered personal assistant.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
